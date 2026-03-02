@@ -12,6 +12,7 @@ client = mqtt.Client(settings.MQTT_USER_PUB)
 
 
 def analyze_data():
+    #EVENTO 1: ALERTA DE VALORES EXCEDIDOS
     # Consulta todos los datos de la última hora, los agrupa por estación y variable
     # Compara el promedio con los valores límite que están en la base de datos para esa variable.
     # Si el promedio se excede de los límites, se envia un mensaje de alerta.
@@ -57,6 +58,59 @@ def analyze_data():
 
     print(len(aggregation), "dispositivos revisados")
     print(alerts, "alertas enviadas")
+
+    #EVENTO 2: ALERTA DE TENDENCIA CRECIENTE SOSTENIDA
+
+    print("Analizando tendencia creciente...")
+
+    stations = Data.objects.select_related(
+        'station', 'measurement',
+        'station__user',
+        'station__location__city',
+        'station__location__state',
+        'station__location__country'
+    ).values(
+        'station_id',
+        'measurement_id'
+    ).distinct()
+
+    trend_alerts = 0
+
+    for s in stations:
+
+        last_values = Data.objects.filter(
+            station_id=s['station_id'],
+            measurement_id=s['measurement_id']
+        ).order_by('-base_time')[:5]
+
+        if last_values.count() < 5:
+            continue
+
+        values = [d.avg_value for d in reversed(last_values)]
+
+        # Verifica tendencia estrictamente creciente
+        if all(x < y for x, y in zip(values, values[1:])):
+
+            sample = last_values[0]
+            station = sample.station
+            measurement = sample.measurement
+
+            user = station.user.username
+            country = station.location.country.name
+            state = station.location.state.name
+            city = station.location.city.name
+
+            topic = f"{country}/{state}/{city}/{user}/in"
+            message = f"ALERT_TREND {measurement.name}"
+
+            print(datetime.now(), "Tendencia creciente detectada:", values)
+            print("Enviando alerta de tendencia a:", topic)
+
+            client.publish(topic, message)
+            trend_alerts += 1
+
+    print(trend_alerts, "alertas por tendencia enviadas")
+
 
 
 def on_connect(client, userdata, flags, rc):

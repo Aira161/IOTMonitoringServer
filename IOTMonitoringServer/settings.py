@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.0/ref/settings/
 """
 
+from faulthandler import disable
 import os
 from pathlib import Path
 from django.contrib import messages
@@ -97,8 +98,11 @@ DATABASES = {
         "USER": "dbadmin",  # Nombre de usuario
         "PASSWORD": "uniandesIOT1234*",  # Contraseña
         "HOST": "10.0.72.37",
-        "PORT": "5432"
-    }
+        "PORT": "5432",
+        "OPTIONS": {
+            "sslmode": "disable",
+        },
+    }    
 }
 
 

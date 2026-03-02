@@ -79,17 +79,20 @@ def analyze_data():
     for s in stations:
 
         last_values = Data.objects.filter(
-            station_id=s['station_id'],
-            measurement_id=s['measurement_id']
-        ).order_by('-base_time')[:3]
+        station_id=s['station_id'],
+        measurement_id=s['measurement_id'],
+        base_time__gte=datetime.now() - timedelta(minutes=2)
+        ).order_by('base_time')
+        print("Cantidad registros tendencia:", last_values.count())
 
         if last_values.count() < 3:
             continue
 
         values = [d.avg_value for d in reversed(last_values)]
+        print("Valores evaluados tendencia:", values)
 
         # Verifica tendencia estrictamente creciente
-        if all(x < y for x, y in zip(values, values[1:])):
+        if all(y >= x for x, y in zip(values, values[1:])) and values[-1] > values[0]:
 
             sample = last_values[0]
             station = sample.station
@@ -159,7 +162,8 @@ def start_cron():
     Inicia el cron que se encarga de ejecutar la función analyze_data cada 3 minutos.
     '''
     print("Iniciando cron...")
-    schedule.every(3).minutes.do(analyze_data)
+    schedule.every(30).seconds.do(analyze_data)
+    #schedule.every(3).minutes.do(analyze_data)
     print("Servicio de control iniciado")
     while 1:
         schedule.run_pending()

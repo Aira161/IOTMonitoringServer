@@ -94,10 +94,10 @@ def analyze_data():
         user = temp_item['station__user__username']
 
         # Reglas prácticas
-        print(datetime.now(), "Temperatura: {:.2f}°C, Humedad: {:.1f}%, Punto de rocío: {:.2f}°C, Spread: {:.2f}°C".format(T, RH, Td, spread))
+        #print(datetime.now(), "Temperatura: {:.2f}°C, Humedad: {:.1f}%, Punto de rocío: {:.2f}°C, Spread: {:.2f}°C".format(T, RH, Td, spread))
         if RH >= 90 and spread <= 2:
             topic = f"{country}/{state}/{city}/{user}/in"
-            message = f"ALERT_RAIN_RISK Td={Td:.2f}C spread={spread:.2f}C RH={RH:.1f}%"
+            message = f"ALERTA RIESGO DE LLUVIA Td={Td:.2f}C spread={spread:.2f}C RH={RH:.1f}%"
             print(datetime.now(), "Riesgo de lluvia detectado:", message)
             client.publish(topic, message)
 

@@ -1,4 +1,5 @@
 from argparse import ArgumentError
+import math
 import ssl
 from django.db.models import Avg
 from datetime import timedelta, datetime
@@ -9,6 +10,14 @@ import time
 from django.conf import settings
 
 client = mqtt.Client(settings.MQTT_USER_PUB)
+
+def punto_de_rocio(T, RH):
+    # Magnus formula
+    a = 17.62
+    b = 243.12
+    gamma = math.log(RH / 100.0) + (a * T) / (b + T)
+    Td = (b * gamma) / (a - gamma)
+    return Td
 
 
 def analyze_data():
@@ -59,60 +68,38 @@ def analyze_data():
     print(len(aggregation), "dispositivos revisados")
     print(alerts, "alertas enviadas")
 
-    #EVENTO 2: ALERTA DE TENDENCIA CRECIENTE SOSTENIDA
+    # EVENTO NUEVO: RIESGO DE LLUVIA / SATURACIÓN (DEW POINT)
+    print("Evaluando riesgo de lluvia (punto de rocío)...")
 
-    print("Analizando tendencia creciente...")
+    temp_item = None
+    hum_item = None
 
-    stations = Data.objects.select_related(
-        'station', 'measurement',
-        'station__user',
-        'station__location__city',
-        'station__location__state',
-        'station__location__country'
-    ).values(
-        'station_id',
-        'measurement_id'
-    ).distinct()
+    for item in aggregation:
+        name = (item["measurement__name"] or "").lower()
+        if "temp" in name:   # "temperatura"
+            temp_item = item
+        elif "hum" in name:  # "humedad"
+            hum_item = item
 
-    trend_alerts = 0
+    if temp_item and hum_item:
+        T = float(temp_item["check_value"])
+        RH = float(hum_item["check_value"])
 
-    for s in stations:
+        Td = punto_de_rocio(T, RH)
+        spread = T - Td
 
-        last_values = Data.objects.filter(
-        station_id=s['station_id'],
-        measurement_id=s['measurement_id'],
-        base_time__gte=datetime.now() - timedelta(minutes=2)
-        ).order_by('base_time')
-        print("Cantidad registros tendencia:", last_values.count())
+        country = temp_item['station__location__country__name']
+        state = temp_item['station__location__state__name']
+        city = temp_item['station__location__city__name']
+        user = temp_item['station__user__username']
 
-        if last_values.count() < 3:
-            continue
-
-        values = [d.avg_value for d in reversed(last_values)]
-        print("Valores evaluados tendencia:", values)
-
-        # Verifica tendencia estrictamente creciente
-        if all(y >= x for x, y in zip(values, values[1:])) and values[-1] > values[0]:
-
-            sample = last_values[0]
-            station = sample.station
-            measurement = sample.measurement
-
-            user = station.user.username
-            country = station.location.country.name
-            state = station.location.state.name
-            city = station.location.city.name
-
+        # Reglas prácticas
+        print(datetime.now(), "Temperatura: {:.2f}°C, Humedad: {:.1f}%, Punto de rocío: {:.2f}°C, Spread: {:.2f}°C".format(T, RH, Td, spread))
+        if RH >= 90 and spread <= 2:
             topic = f"{country}/{state}/{city}/{user}/in"
-            message = f"ALERT_TREND {measurement.name}"
-
-            print(datetime.now(), "Tendencia creciente detectada:", values)
-            print("Enviando alerta de tendencia a:", topic)
-
+            message = f"ALERT_RAIN_RISK Td={Td:.2f}C spread={spread:.2f}C RH={RH:.1f}%"
+            print(datetime.now(), "Riesgo de lluvia detectado:", message)
             client.publish(topic, message)
-            trend_alerts += 1
-
-    print(trend_alerts, "alertas por tendencia enviadas")
 
 
 
@@ -168,3 +155,4 @@ def start_cron():
     while 1:
         schedule.run_pending()
         time.sleep(1)
+
